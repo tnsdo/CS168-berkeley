@@ -124,13 +124,49 @@ class UDP:
 
 # TODO feel free to add helper functions if you'd like
 
+def invalid_packet(buf):
+    try:
+        #get ICMP from buf
+        ipv4 = IPv4(buf)
+        
+        #B4
+        if ipv4.proto != 1:
+            return False
+        
+        #B6
+        if len(buf) < ipv4.header_len:
+            return False       
+        
+        #B8
+        if ipv4.header_len > 20:
+            index = ipv4.header_len
+        else:
+            index = 20
+        
+        icmp = ICMP(buf[index:])
+          
+        #B3
+        if icmp.type == 11 and icmp.code != 0:
+            return False
+        
+        #B2
+        if icmp.type not in [3, 11]:
+            return False
+        
+        return True
+    
+    #B5
+    except Exception as e:
+        return False
+
 
 def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) -> list[list[str]]:
     """ Run traceroute and returns the discovered path. """
     result = []
     
     for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
-        sendsock.set_ttl(ttl) 
+        sendsock.set_ttl(ttl)
+        
         #save routers
         routers = set()
         
@@ -147,15 +183,16 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) -> list[li
                     if not buf:
                         break
                     
-                    routers.add(address[0])
+                    if invalid_packet(buf):
+                        routers.add(address[0])
                     
                     #if response from ip, break the loop
-                    if address[0] == ip:
-                        result.append(list(routers))
-                        util.print_result(result[-1], ttl)
-                        return result
-                    else:
-                        break
+                        if address[0] == ip:
+                            result.append(list(routers))
+                            util.print_result(result[-1], ttl)
+                            return result
+                        else:
+                            break
 
         #save results
         result.append(list(routers))
@@ -163,7 +200,7 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) -> list[li
         
         
         if ip in routers:
-            return result
+            break
         
     return result
 
@@ -173,3 +210,5 @@ if __name__ == '__main__':
     ip_addr = util.gethostbyname(args.host)
     print(f"traceroute to {args.host} ({ip_addr})")
     traceroute(util.Socket.make_udp(), util.Socket.make_icmp(), ip_addr)
+
+
