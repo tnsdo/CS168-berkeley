@@ -125,39 +125,35 @@ class UDP:
 # TODO feel free to add helper functions if you'd like
 
 def invalid_packet(buf):
-    try:
-        #get ICMP from buf
-        ipv4 = IPv4(buf)
-        
-        #B4
-        if ipv4.proto != 1:
-            return False
-        
-        #B6
-        if len(buf) < ipv4.header_len:
-            return False       
-        
-        #B8
-        if ipv4.header_len > 20:
-            index = ipv4.header_len
-        else:
-            index = 20
-        
-        icmp = ICMP(buf[index:])
-          
-        #B3
-        if icmp.type == 11 and icmp.code != 0:
-            return False
-        
-        #B2
-        if icmp.type not in [3, 11]:
-            return False
-        
-        return True
+
+    #get ICMP from buf
+    ipv4 = IPv4(buf)
     
-    #B5
-    except Exception as e:
+    #B4
+    if ipv4.proto != 1:
         return False
+    
+    #B8
+    if ipv4.header_len > 20:
+        index = ipv4.header_len
+    else:
+        index = 20
+    
+    icmp = ICMP(buf[index:])
+
+    #B6
+    if len(buf) < ipv4.length:
+        return False
+
+    #B3
+    if icmp.type == 11 and icmp.code != 0:
+        return False
+    
+    #B2
+    if icmp.type not in [3, 11]:
+        return False
+    
+    return True
 
 
 def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) -> list[list[str]]:
@@ -187,17 +183,15 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) -> list[li
                         routers.add(address[0])
                     
                     #if response from ip, break the loop
-                        if address[0] == ip:
-                            result.append(list(routers))
-                            util.print_result(result[-1], ttl)
-                            return result
-                        else:
-                            break
-
-        #save results
+                    if address[0] == ip:
+                        result.append(list(routers))
+                        util.print_result(result[-1], ttl)
+                        return result
+                    else:
+                        break
+                    
         result.append(list(routers))
         util.print_result(result[- 1], ttl)
-        
         
         if ip in routers:
             break
