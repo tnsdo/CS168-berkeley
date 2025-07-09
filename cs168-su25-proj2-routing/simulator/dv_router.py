@@ -27,7 +27,7 @@ class DVRouter(DVRouterBase):
     SPLIT_HORIZON = False
     POISON_REVERSE = False
     # -----------------------------------------------
-
+    
     # Determines if you send poison for expired routes
     POISON_EXPIRED = False
 
@@ -46,17 +46,17 @@ class DVRouter(DVRouterBase):
         assert not (
             self.SPLIT_HORIZON and self.POISON_REVERSE
         ), "Split horizon and poison reverse can't both be on"
-
+                    
         self.start_timer()  # Starts signaling the timer at correct rate.
-
+        
         # Contains all current ports and their latencies.
         # See the write-up for documentation.
         self.ports = Ports()
-
+        
         # This is the table that contains all current routes
         self.table = Table()
         self.table.owner = self
-
+        
         ##### Begin Stage 10A #####
         self.history = {}
         ##### End Stage 10A #####
@@ -64,10 +64,10 @@ class DVRouter(DVRouterBase):
     def add_static_route(self, host, port):
         """
         Adds a static route to this router's table.
-
+        
         Called automatically by the framework whenever a host is connected
         to this router.
-
+        
         :param host: the host.
         :param port: the port that the host is attached to.
         :returns: nothing.
@@ -75,7 +75,7 @@ class DVRouter(DVRouterBase):
         # `port` should have been added to `peer_tables` by `handle_link_up`
         # when the link came up.
         assert port in self.ports.get_all_ports(), "Link should be up, but is not."
-
+       
         ##### Begin Stage 1 #####
         latency = self.ports.get_latency(port)
         new_entry = TableEntry(
@@ -90,9 +90,9 @@ class DVRouter(DVRouterBase):
     def handle_data_packet(self, packet, in_port):
         """
         Called when a data packet arrives at this router.
-
+        
         You may want to forward the packet, drop the packet, etc. here.
-
+        
         :param packet: the packet that arrived.
         :param in_port: the port from which the packet arrived.
         :return: nothing.
@@ -113,13 +113,13 @@ class DVRouter(DVRouterBase):
         ##### End Stage 2 #####
 
     def send_routes(self, force=False, single_port=None):
-        """
-        Send route advertisements for all routes in the table.
-
+        """Send route advertisements for all routes in the table.
+        
         :param force: if True, advertises ALL routes in the table;
                       otherwise, advertises only those routes that have
                       changed since the last advertisement.
-               single_port: if not None, sends updates only to that port; to
+                      
+        single_port: if not None, sends updates only to that port; to
                             be used in conjunction with handle_link_up.
         :return: nothing.
         """
@@ -174,20 +174,21 @@ class DVRouter(DVRouterBase):
             table_entry = self.table[dst]
             if table_entry.expire_time == FOREVER:
                 return
-            
+
             if self.POISON_EXPIRED and api.current_time() > table_entry.expire_time:
                 current_route = self.table[dst]
                 poison_route = TableEntry(dst, current_route.port, latency=INFINITY, expire_time=self.ROUTE_TTL)
-                self.table[dst] = poison_route   
-                         
-            if api.current_time() > table_entry.expire_time:
-                self.table.pop(dst)
+                self.table[dst] = poison_route
+
+            elif api.current_time() > table_entry.expire_time:
+                del self.table[dst]
         ##### End Stages 5, 9 #####
+
 
     def handle_route_advertisement(self, route_dst, route_latency, port):
         """
         Called when the router receives a route advertisement from a neighbor.
-
+        
         :param route_dst: the destination of the advertised route.
         :param route_latency: latency from the neighbor to the destination.
         :param port: the port that the advertisement arrived on.
@@ -200,30 +201,37 @@ class DVRouter(DVRouterBase):
         new_latency = port_latency + route_latency
         current_route = self.table.get(route_dst)
         new_route = TableEntry(dst=route_dst, port=port, latency=new_latency, expire_time=expire_time)
-        
+
         if route_latency >= INFINITY and current_route.port == port:
             current_expire_time = current_route.expire_time
             poison_route = TableEntry(dst=route_dst, port=port, latency=INFINITY, expire_time=current_expire_time)
             self.table[route_dst] = poison_route
             self.send_routes(force=False)
             return
-        
+
         if not current_route:
             self.table[route_dst] = new_route
             self.send_routes(force=False)
             return
+
+        #Rule1
+        if new_latency < current_route.latency:
+            self.table[route_dst] = new_route
+            self.send_routes(force=False)
+            return
         
-        #Rule1&2
-        if new_latency < current_route or current_route.port == port:
+        #Rule2
+        if current_route.port == port:
             self.table[route_dst] = new_route
             self.send_routes(force=False)
             return
         ##### End Stages 4, 10 #####
 
+
     def handle_link_up(self, port, latency):
         """
         Called by the framework when a link attached to this router goes up.
-
+        
         :param port: the port that the link is attached to.
         :param latency: the link latency.
         :returns: nothing.
@@ -238,13 +246,12 @@ class DVRouter(DVRouterBase):
 
     def handle_link_down(self, port):
         """
-        Called by the framework when a link attached to this router goes down.
-
+        Called by the framework when a link attached to this router does down.
         :param port: the port number used by the link.
         :returns: nothing.
         """
         self.ports.remove_port(port)
-
+        
         ##### Begin Stage 10B #####
         for dst in list(self.table.keys()):
             if self.table[dst].port == port:
